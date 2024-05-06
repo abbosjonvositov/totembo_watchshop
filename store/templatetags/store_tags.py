@@ -43,9 +43,12 @@ def get_sorted():
 # Функция которая вернёт избранные товары полдьзователя
 @register.simple_tag()
 def get_favorite_products(user):
-    favs = FavoriteProduct.objects.filter(user=user)
-    products = [i.product for i in favs]
-    return products
+    try:
+        favs = FavoriteProduct.objects.filter(user=user)
+        products = [i.product for i in favs]
+        return products
+    except:
+        return ''
 
 
 

@@ -1,13 +1,45 @@
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 from django.contrib.auth.models import User
 
 
 # Create your models here.
 
+class ProfileTelegram(models.Model):
+    external_id = models.PositiveIntegerField(verbose_name="Телеграм ID", unique=True)
+    fullname = models.TextField(verbose_name="Полное имя")
+    username = models.TextField(verbose_name="Телеграм юзернейм")
+    contacts = models.CharField(max_length=13, unique=True, verbose_name="Контакты")
+    created_at = models.DateTimeField(verbose_name="Создано в", auto_now_add=True)
+    fullname_updated_at = models.DateTimeField(verbose_name="Обнавлен в", null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.external_id}'
+
+    def can_update_fullname(self):
+        if not self.fullname_updated_at:
+            return True
+        return timezone.now() >= self.fullname_updated_at + timezone.timedelta(hours=24)
+
+    def update_fullname(self, new_fullname):
+        if self.can_update_fullname():
+            self.fullname = new_fullname
+            self.fullname_updated_at = timezone.now()
+            self.save()
+            return True
+        else:
+            return False
+
+    class Meta:
+        verbose_name = 'Пользователь телеграма'
+        verbose_name_plural = 'Пользователи телеграма'
+
+
 class Category(models.Model):
     title = models.CharField(max_length=150, verbose_name='Название категории')
-    image = models.ImageField(upload_to='categories/',blank=True, null=True ,verbose_name='Картинки категорий')
+    emojis = models.CharField(max_length=150, blank=True, null=True, verbose_name='Эмоджи для категории')
+    image = models.ImageField(upload_to='categories/', blank=True, null=True, verbose_name='Картинки категорий')
     slug = models.SlugField(unique=True, null=True)
     parent = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True,
                                related_name='subcategories', verbose_name='Категория')
@@ -26,10 +58,8 @@ class Category(models.Model):
     def __str__(self):
         return self.title
 
-
     def __repr__(self):
         return f'Категория: pk={self.pk}, title={self.title}'
-
 
     class Meta:
         verbose_name = 'Категория'
@@ -64,16 +94,12 @@ class Product(models.Model):
     def __str__(self):
         return self.title
 
-
     def __repr__(self):
         return f'Категория: pk={self.pk}, title={self.title}, price={self.price}'
-
 
     class Meta:
         verbose_name = 'Товар'
         verbose_name_plural = 'Товары'
-
-
 
 
 class Gallery(models.Model):
@@ -83,8 +109,6 @@ class Gallery(models.Model):
     class Meta:
         verbose_name = 'Картинка'
         verbose_name_plural = 'Картинки'
-
-
 
 
 class Review(models.Model):
@@ -101,28 +125,15 @@ class Review(models.Model):
         verbose_name_plural = 'Отзывы'
 
 
-
-
 # Моделька Избранное
-class FavoriteProduct(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Покупатель')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Продукт избранного')
-
-    def __str__(self):
-        return self.product.title
-
-    class Meta:
-        verbose_name = 'Избранное'
-        verbose_name_plural = 'Избранное'
-
-
 
 
 class Customer(models.Model):
     user = models.OneToOneField(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Пользователь')
+    user_telegram = models.OneToOneField(ProfileTelegram, on_delete=models.SET_NULL, null=True, blank=True,
+                                         verbose_name='Пользователь телеграма')
     first_name = models.CharField(max_length=250, default='', verbose_name='Имя покупателя')
     last_name = models.CharField(max_length=250, default='', verbose_name='Фамилия покупателя')
-
 
     def __str__(self):
         return self.first_name
@@ -131,6 +142,19 @@ class Customer(models.Model):
         verbose_name = 'Покупатель'
         verbose_name_plural = 'Покупатели'
 
+
+class FavoriteProduct(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Покупатель')
+    user_telegram = models.ForeignKey(ProfileTelegram, on_delete=models.CASCADE, blank=True, null=True,
+                                      verbose_name='Покупатель')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name='Продукт избранного')
+
+    def __str__(self):
+        return self.product.title
+
+    class Meta:
+        verbose_name = 'Избранное'
+        verbose_name_plural = 'Избранное'
 
 
 class Order(models.Model):
@@ -149,7 +173,7 @@ class Order(models.Model):
     # Метод для получения суммы заказа
     @property
     def get_cart_total_price(self):
-        order_products = self.orderproduct_set.all() # Получаем заказанные продукты самого заказа
+        order_products = self.orderproduct_set.all()  # Получаем заказанные продукты самого заказа
         total_price = sum([product.get_total_price for product in order_products])
         return total_price
 
@@ -158,8 +182,6 @@ class Order(models.Model):
         order_products = self.orderproduct_set.all()  # Получаем заказанные продукты самого заказа
         total_quantity = sum([product.quantity for product in order_products])
         return total_quantity
-
-
 
 
 class OrderProduct(models.Model):
@@ -180,8 +202,6 @@ class OrderProduct(models.Model):
     def get_total_price(self):
         total_price = self.product.price * self.quantity
         return total_price
-
-
 
 
 # Модель доставки
@@ -205,15 +225,12 @@ class ShippingAddress(models.Model):
 class City(models.Model):
     city = models.CharField(max_length=300, verbose_name='Город')
 
-
     def __str__(self):
         return self.city
 
     class Meta:
         verbose_name = 'Город'
         verbose_name_plural = 'Города'
-
-
 
 
 # Модель для сохранения почт
@@ -229,17 +246,14 @@ class Mail(models.Model):
         verbose_name_plural = 'Почтовые Адреса'
 
 
-
 # Модель для сохраенния Заказов
 class SaveOrder(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, blank=True, null=True, verbose_name='Покупатель')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата заказа')
     total_price = models.FloatField(default=0, verbose_name='Сумма заказа')
 
-
     def __str__(self):
         return f'Заказ №: {self.pk}'
-
 
     class Meta:
         verbose_name = 'История заказа'
@@ -259,17 +273,53 @@ class SaveOrderProducts(models.Model):
     def __str__(self):
         return f'{self.product}'
 
-
     class Meta:
         verbose_name = 'История заказанного товара'
         verbose_name_plural = 'Истории заказанных товаров'
 
 
+class ProductTelegram(models.Model):
+    title = models.CharField(max_length=200, verbose_name='Название продукта')
+    price = models.FloatField(verbose_name='Цена')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата добавления')
+    quantity = models.IntegerField(default=0, verbose_name='Количество товара')
+    description = models.TextField(default='Описание скоро будет', verbose_name='Описание товара')
+    category = models.ForeignKey('Category', on_delete=models.CASCADE, verbose_name='Категория',
+                                 related_name='product_telegrams')
+    slug = models.SlugField(unique=True, null=True)
+    size = models.IntegerField(default=30, verbose_name='Размер')
+
+    def get_absolute_url(self):
+        return reverse('product_detail', kwargs={'slug': self.slug})
+
+    def get_image_product(self):
+        if self.images:
+            try:
+                return self.images.first().image.url
+            except:
+                return ''
+        else:
+            return ''
+
+    def __str__(self):
+        return self.title
+
+    def __repr__(self):
+        return f'Категория: pk={self.pk}, title={self.title}, price={self.price}'
+
+    class Meta:
+        verbose_name = 'Товар телеграм'
+        verbose_name_plural = 'Товары телеграм'
 
 
+class GalleryTelegram(models.Model):
+    product = models.ForeignKey(ProductTelegram, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='products/', verbose_name='Картинки продуктов')
+    color = models.CharField(max_length=100, verbose_name='Цвет')
 
+    def __str__(self):
+        return f"{self.product.title} Image"
 
-
-
-
-
+    class Meta:
+        verbose_name = 'Картинка телеграм'
+        verbose_name_plural = 'Картинки телеграм'

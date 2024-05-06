@@ -11,6 +11,7 @@ from .utils import CartForAuthenticatedUser, get_cart_data
 from shop import settings
 import stripe
 
+
 # Create your views here.
 
 class ProductList(ListView):
@@ -24,7 +25,6 @@ class ProductList(ListView):
     def get_queryset(self):
         categories = Category.objects.filter(parent=None)
         return categories
-
 
 
 class CategoryPage(ListView):
@@ -42,7 +42,7 @@ class CategoryPage(ListView):
             products = Product.objects.filter(category__slug=type_field)
             return products
 
-        main_category = Category.objects.get(slug=self.kwargs['slug']) # По slug получ глав категорию
+        main_category = Category.objects.get(slug=self.kwargs['slug'])  # По slug получ глав категорию
         subcategories = main_category.subcategories.all()  # Из категории поличи подкатегории
         products = Product.objects.filter(category__in=subcategories)  # Получ все продукты подкатегорий
         if sort_field:
@@ -58,7 +58,6 @@ class CategoryPage(ListView):
         return context
 
 
-
 class ProductDetail(DetailView):
     model = Product
     context_object_name = 'product'
@@ -71,7 +70,7 @@ class ProductDetail(DetailView):
         products = Product.objects.all()
         data = []  # В этот список будут попадать рандомные товары
         for i in range(4):
-            random_index = randint(0, len(products)-1)
+            random_index = randint(0, len(products) - 1)
             p = products[random_index]
             if p not in data:
                 data.append(p)
@@ -81,10 +80,7 @@ class ProductDetail(DetailView):
         if self.request.user.is_authenticated:
             context['review_form'] = ReviewForm()
 
-
         return context
-
-
 
 
 def user_login(request):
@@ -101,14 +97,11 @@ def user_login(request):
         return redirect(page)
 
 
-
 def user_logout(request):
     logout(request)
     page = request.META.get('HTTP_REFERER', 'product_list')  # Получаем Адрес страницы запроса
     messages.warning(request, 'Вы вышли из Аккаунта')
     return redirect(page)
-
-
 
 
 def register_user(request):
@@ -124,7 +117,6 @@ def register_user(request):
     return redirect(page)
 
 
-
 def save_review(request, slug):
     form = ReviewForm(data=request.POST)
     if form.is_valid():
@@ -138,7 +130,6 @@ def save_review(request, slug):
         pass
 
     return redirect('product_detail', product.slug)
-
 
 
 # Функция для добавления продукта в избранное
@@ -163,9 +154,7 @@ def save_favorite_product(request, slug):
     return redirect(page)
 
 
-
-
-class FavoriteProductView(LoginRequiredMixin ,ListView):
+class FavoriteProductView(LoginRequiredMixin, ListView):
     model = FavoriteProduct
     context_object_name = 'products'
     template_name = 'store/favorite.html'
@@ -177,8 +166,6 @@ class FavoriteProductView(LoginRequiredMixin ,ListView):
         favorite_products = FavoriteProduct.objects.filter(user=user)
         products = [i.product for i in favorite_products]
         return products
-
-
 
 
 # Функция для страницы корзины
@@ -193,6 +180,7 @@ def cart(request):
 
     return render(request, 'store/cart.html', context)
 
+
 # Функция для добавления товара в корзину
 def to_cart(request, product_id, action):
     if request.user.is_authenticated:
@@ -204,7 +192,6 @@ def to_cart(request, product_id, action):
         messages.success(request, 'Авторизуйтесь что бы добавить в корзину')
         page = request.META.get('HTTP_REFERER', 'product_list')
         return redirect(page)
-
 
 
 # Функция для страницы оформления заказаз
@@ -224,15 +211,12 @@ def checkout(request):
         return render(request, 'store/checkout.html', context)
 
 
-
-
 # Функция для совершения оплаты и сохранения данных пользователя с Адресом доставки
 def create_checkout_session(request):
     stripe.api_key = settings.STRIPE_SECRET_KEY
     if request.method == 'POST':
         user_cart = CartForAuthenticatedUser(request)  # Получ корзину покупателя
         cart_info = user_cart.get_cart_info()  # Из корзины при помощи метода получаем информацию о корзине
-
 
         # Сохранение данных покупателя
         customer_form = CustomerForm(data=request.POST)
@@ -270,15 +254,14 @@ def create_checkout_session(request):
         return redirect(session.url, 303)
 
 
-
-
 # Функция для страницы успешной оплаты
 def success_payment(request):
     if request.user.is_authenticated:
         user_cart = CartForAuthenticatedUser(request)
         cart_info = user_cart.get_cart_info()
         order = cart_info['order']  # Получили заказа
-        order_save = SaveOrder.objects.create(customer=order.customer, total_price=order.get_cart_total_price)  # Создаём
+        order_save = SaveOrder.objects.create(customer=order.customer,
+                                              total_price=order.get_cart_total_price)  # Создаём
         order_save.save()  # Сохраеняем
         order_products = order.orderproduct_set.all()
         for item in order_products:
@@ -291,12 +274,9 @@ def success_payment(request):
             print(f'Заказанный продукт {item} сохранён')
             save_order_product.save()
 
-
         user_cart.clear()  # После успешной оплаты вызвали метод что бы очистить корзину
         messages.success(request, 'Ваша оплата прошла успешно')
         return render(request, 'store/success.html')
-
-
 
 
 # Вьюшка для очищения корзины
@@ -311,7 +291,6 @@ def clear_cart(request):
         product.quantity += quantity
         product.save()
     return redirect('my_cart')
-
 
 
 def save_mail(request):
@@ -329,9 +308,10 @@ def save_mail(request):
         return redirect(page)
 
 
-
 from shop import settings
 from django.core.mail import send_mail
+
+
 def send_mail_to_customer(request):
     if request.user.is_superuser:
         if request.method == 'POST':
@@ -342,7 +322,7 @@ def send_mail_to_customer(request):
                     subject='У нас для вас новинки',
                     message=text,
                     from_email=settings.EMAIL_HOST_USER,
-                    recipient_list=[email], # Указали кому отправлять
+                    recipient_list=[email],  # Указали кому отправлять
                     fail_silently=False
                 )
                 print(f'Рассылка выполнена на почту {email}? - {bool(mail)}')
@@ -353,7 +333,3 @@ def send_mail_to_customer(request):
 
     else:
         return redirect('product_list')
-
-
-
-

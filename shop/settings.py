@@ -30,6 +30,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'jazzmin',
+    'nested_admin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -148,3 +149,5 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'muhammadievaleksandr29@gmail.com'
 EMAIL_HOST_PASSWORD = 'nnuabqlbfhxqtcgx'  # Пароль приложения
+
+TOKEN = '6800775875:AAH5xRXzI51Y4c7Y7B4zfqSgVM7FG6d7Z0w'
