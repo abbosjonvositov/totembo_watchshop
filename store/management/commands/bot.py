@@ -5,7 +5,6 @@ from store.keyboards import *
 from django.conf import settings
 from django.core.cache import cache
 from pprint import pprint
-# from apscheduler.schedulers.background import BackgroundScheduler
 import subprocess
 import datetime
 import os
@@ -33,6 +32,7 @@ class BotState:
 
 fsm = BotState()
 USER_STATE = {}
+USER_PRODUCT_STATE = {}
 
 
 def log_errors(f):
@@ -47,18 +47,34 @@ def log_errors(f):
     return inner
 
 
-def generate_product_details(product, quantity, color):
-    return (
+def generate_product_details(product, quantity, color, profile=None):
+    cart_items = CartItemTelegram.objects.filter(profile=profile, product=product) if profile else []
+    cart_details = ""
+
+    if cart_items:
+        count = 0
+        cart_details = "\n#########\nCart:\n"
+        for item in cart_items:
+            count += 1
+            total_price = item.product.price * item.quantity
+            cart_details += (f"{count}. Product: {item.product.title} | "
+                             f"Quantity: {item.quantity} | "
+                             f"Color: {item.color} | "
+                             f"Total price: {total_price} USD\n")
+
+    product_info = (
         f"Title: {product.title}\n"
         f"Price: {product.price} $\n"
         f"Size: {product.size}\n"
-        f"Color: {color}\n"  # Dynamic color display
+        f"Color: {color}\n"
         f"Quantity available: {product.quantity} (Selected: {quantity})\n"
         f"Description: {product.description}\n"
     )
 
+    return product_info + cart_details
 
-def generate_markup(product, quantity, has_multiple_images, current_index=0):
+
+def generate_markup(product, quantity, has_multiple_images, current_color, current_index=0):
     """Generate dynamic markup for product interactions."""
     markup = types.InlineKeyboardMarkup(row_width=2)
 
@@ -85,15 +101,15 @@ def generate_markup(product, quantity, has_multiple_images, current_index=0):
 
     # Back and Add to Cart buttons
     markup.add(
-        types.InlineKeyboardButton(text='🏠 Главное меню', callback_data=f'main'),
-        types.InlineKeyboardButton(text='Add to Cart 🛒', callback_data=f'cart_{product.id}_{quantity}'),
+        types.InlineKeyboardButton(text='🏠 Главное меню', callback_data='main'),
+        types.InlineKeyboardButton(text='Add to Cart 🛒', callback_data=f'cart_{product.id}_{quantity}_{current_color}'),
         types.InlineKeyboardButton(text='♥ Add to Favorites', callback_data=f'favorites_{product.id}')
     )
 
     return markup
 
 
-def generate_navigation_markup(product_id, current_index, total_images, quantity):
+def generate_navigation_markup(product_id, current_index, total_images, current_color, quantity):
     """Generate dynamic markup for navigation and purchasing."""
     markup = types.InlineKeyboardMarkup(row_width=2)
 
@@ -118,8 +134,8 @@ def generate_navigation_markup(product_id, current_index, total_images, quantity
 
     # Back and Add to Cart buttons
     markup.add(
-        types.InlineKeyboardButton(text='🏠 Главное меню', callback_data=f'main'),
-        types.InlineKeyboardButton(text='Add to Cart 🛒', callback_data=f'cart_{product_id}_{quantity}'),
+        types.InlineKeyboardButton(text='🏠 Главное меню', callback_data='main'),
+        types.InlineKeyboardButton(text='Add to Cart 🛒', callback_data=f'cart_{product_id}_{quantity}_{current_color}'),
         types.InlineKeyboardButton(text='♥ Add to Favorites', callback_data=f'favorites_{product_id}')
     )
 
@@ -140,8 +156,6 @@ def list_categories(chat_id):
     categories = Category.objects.all()[1:]  # Assuming the first category is excluded
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
 
-    # Assume each category has an 'emoji' attribute for simplicity
-    # If not, you can define a dictionary to map categories to emojis
     temp_row = []
     for category in categories:
         button_text = f"'{category.emojis}' {category.title}"  # Concatenate emoji and title
@@ -156,17 +170,33 @@ def list_categories(chat_id):
     return markup
 
 
+def update_user_product_state(chat_id, product_id, current_index, quantity):
+    USER_PRODUCT_STATE[chat_id] = {
+        'product_id': product_id,
+        'current_index': current_index,
+        'quantity': quantity
+    }
+    print(USER_PRODUCT_STATE)
+
+
+def clear_user_state(chat_id):
+    if chat_id in USER_STATE:
+        del USER_STATE[chat_id]
+    if chat_id in USER_PRODUCT_STATE:
+        del USER_PRODUCT_STATE[chat_id]
+
+
 class Command(BaseCommand):
     help = 'Telegram bot'
 
     def handle(self, *args, **options):
         bot = TeleBot(settings.TOKEN)
-        logger = logging.getLogger(__name__)
         logger.info("Bot started")
 
         @bot.message_handler(commands=['start'])
         def command_start(message):
             chat_id = message.chat.id
+            clear_user_state(chat_id)
             existing_profiles = ProfileTelegram.objects.filter(external_id=chat_id)
             user_full_name = message.from_user.full_name
             if existing_profiles.exists():
@@ -174,12 +204,10 @@ class Command(BaseCommand):
                     fullname = profile.fullname
                     bot.send_message(chat_id, 'Добро пожаловать!', reply_markup=ReplyKeyboardRemove())
                     bot.send_message(chat_id, f'🤗 Здравствуйте, {fullname}.', reply_markup=gen_main_menu())
-
             else:
                 fsm.state = 'awaiting_fullname'
                 bot.send_message(chat_id, f'🤗 Здравствуйте, {message.from_user.full_name}',
                                  reply_markup=ReplyKeyboardRemove())
-
                 bot.send_message(chat_id, '📝 Пожалуйста, введите свое полное имя',
                                  reply_markup=my_name_button(user_full_name))
 
@@ -195,7 +223,6 @@ class Command(BaseCommand):
                              func=lambda message: fsm.state == 'awaiting_contact')
         def cancel_handler(message: Message):
             chat_id = message.from_user.id
-
             bot.send_message(chat_id, '❌ Отменено', reply_markup=ReplyKeyboardRemove())
 
         @bot.message_handler(content_types=['contact'], func=lambda message: fsm.state == 'awaiting_contact')
@@ -233,6 +260,7 @@ class Command(BaseCommand):
         @bot.message_handler(func=lambda message: USER_STATE.get(message.chat.id) == 'choosing_category')
         def handle_category_selection(message):
             chat_id = message.chat.id
+            clear_user_state(chat_id)  # Clear the state when selecting a category
             category_title = message.text.split("'")[2].strip()
             category = Category.objects.filter(title=category_title).first()
             if category:
@@ -242,7 +270,6 @@ class Command(BaseCommand):
                 else:
                     bot.send_message(chat_id, "В этой категории пока нет продуктов.",
                                      reply_markup=back_to_main())  # No products found
-
                 fsm.state = None
             else:
                 bot.send_message(chat_id, "Категория не найдена, пожалуйста, выберите заново.")
@@ -250,19 +277,36 @@ class Command(BaseCommand):
 
         @bot.callback_query_handler(func=lambda call: call.data.startswith('prod_'))
         def show_product(call):
+            chat_id = call.message.chat.id
             product_id = int(call.data.split('_')[1])
             product = ProductTelegram.objects.get(id=product_id)
             images = product.images.all()
-            print(images)
+
+            # Retrieve the profile of the user
+            try:
+                profile = ProfileTelegram.objects.get(external_id=chat_id)
+            except ProfileTelegram.DoesNotExist:
+                bot.answer_callback_query(call.id, "Profile not found.")
+                return
+
             if images.exists():
                 initial_image = images.first()
                 photo_path = os.path.join(settings.MEDIA_ROOT, str(initial_image.image))
-                initial_quantity = 1  # Start with a default purchasing quantity of 1
+                initial_quantity = 1  # Default purchasing quantity is 1
                 initial_color = initial_image.color  # Get the color of the initial image
-                product_details = generate_product_details(product, initial_quantity,
-                                                           initial_color)  # Include color in details
 
-                markup = generate_markup(product, initial_quantity, len(images) > 1, 0)  # Start at the first image
+                # Update the state with the initial color and quantity
+                USER_PRODUCT_STATE[chat_id] = {
+                    'product_id': product_id,
+                    'current_color': initial_color,
+                    'current_quantity': initial_quantity
+                }
+
+                # Pass the profile to the generate_product_details function to include cart details
+                product_details = generate_product_details(product, initial_quantity, initial_color, profile)
+                markup = generate_markup(product, initial_quantity, len(images) > 1,
+                                         current_color=initial_color)  # Start at the first image
+
                 with open(photo_path, 'rb') as photo:
                     bot.send_photo(chat_id=call.message.chat.id, photo=photo, caption=product_details,
                                    reply_markup=markup)
@@ -281,6 +325,49 @@ class Command(BaseCommand):
         def noop(call):
             bot.answer_callback_query(call.id, "Cannot order less than one")
 
+        @bot.callback_query_handler(func=lambda call: call.data.startswith(('incr_', 'decr_')))
+        def adjust_quantity(call):
+            action, product_id, current_quantity = call.data.split('_')
+            product_id = int(product_id)
+            current_quantity = int(current_quantity)
+            product = ProductTelegram.objects.get(id=product_id)
+            images = product.images.all()
+
+            if call.message.chat.id not in USER_PRODUCT_STATE:
+                USER_PRODUCT_STATE[call.message.chat.id] = {}
+
+            state = USER_PRODUCT_STATE[call.message.chat.id]
+
+            current_color = state.get('current_color')
+            current_index = state.get('current_index', 0)
+
+            # Retrieve the user's profile
+            try:
+                profile = ProfileTelegram.objects.get(external_id=call.message.chat.id)
+            except ProfileTelegram.DoesNotExist:
+                bot.answer_callback_query(call.id, "Profile not found.")
+                return
+
+            if images.exists() and current_color:
+                if 'incr' in action:
+                    new_quantity = min(product.quantity, current_quantity + 1)
+                else:
+                    new_quantity = max(1, current_quantity - 1)
+
+                state['current_quantity'] = new_quantity
+
+                # Pass profile to generate_product_details to show updated cart
+                product_details = generate_product_details(product, new_quantity, current_color, profile)
+                markup = generate_markup(product, new_quantity, len(images) > 1, current_color, current_index)
+                bot.edit_message_caption(
+                    caption=product_details,
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    reply_markup=markup
+                )
+            else:
+                bot.answer_callback_query(call.id, "No color selected or images are not available.")
+
         @bot.callback_query_handler(func=lambda call: call.data.startswith(('left_', 'right_')))
         def navigate_images(call):
             direction, product_id, index = call.data.split('_')
@@ -288,18 +375,34 @@ class Command(BaseCommand):
             index = int(index)
             product = ProductTelegram.objects.get(id=product_id)
             images = product.images.all()
-            current_quantity = 1  # This could be dynamic based on user interactions if implemented
+
+            new_quantity = 1
 
             if len(images) > 1:
                 new_index = (index - 1 if direction == 'left' and index > 0 else
                              (index + 1 if direction == 'right' and index < len(images) - 1 else index))
                 new_image = images[new_index]
                 new_image_path = os.path.join(settings.MEDIA_ROOT, str(new_image.image))
-                current_color = new_image.color  # Fetch color of the new image
-                product_details = generate_product_details(product, current_quantity, current_color)
+                current_color = new_image.color
+
+                USER_PRODUCT_STATE[call.message.chat.id] = {
+                    'current_color': current_color,
+                    'current_quantity': new_quantity,
+                    'current_index': new_index
+                }
+
+                # Retrieve the user's profile
+                try:
+                    profile = ProfileTelegram.objects.get(external_id=call.message.chat.id)
+                except ProfileTelegram.DoesNotExist:
+                    bot.answer_callback_query(call.id, "Profile not found.")
+                    return
+
+                # Pass profile to generate_product_details to show updated cart
+                product_details = generate_product_details(product, new_quantity, current_color, profile)
 
                 with open(new_image_path, 'rb') as photo:
-                    markup = generate_navigation_markup(product_id, new_index, len(images), current_quantity)
+                    markup = generate_navigation_markup(product_id, new_index, len(images), current_color, new_quantity)
                     try:
                         bot.edit_message_media(
                             media=types.InputMediaPhoto(photo, caption=product_details),
@@ -313,30 +416,52 @@ class Command(BaseCommand):
             else:
                 bot.answer_callback_query(call.id, "No additional images to navigate.")
 
-        @bot.callback_query_handler(func=lambda call: call.data.startswith(('incr_', 'decr_')))
-        def adjust_quantity(call):
-            action, product_id, current_quantity = call.data.split('_')
-            product_id = int(product_id)
-            current_quantity = int(current_quantity)
+        @bot.callback_query_handler(func=lambda call: call.data.startswith('cart_'))
+        def add_to_cart(call):
+            print(call.data)
+            # Extract data from the callback
+            data = call.data.split('_')
+            product_id = int(data[1])
+            quantity = int(data[2])
+            color = data[3]
+
+            # Get the product and user profile
             product = ProductTelegram.objects.get(id=product_id)
-            images = product.images.all()  # Assuming images are available
-            if images.exists():
-                current_image = images.first()  # This should ideally be the currently displayed image
-                current_color = current_image.color
+            profile = ProfileTelegram.objects.get(external_id=call.message.chat.id)
 
-                if 'incr' in action:
-                    new_quantity = min(product.quantity, current_quantity + 1)
-                else:
-                    new_quantity = max(1, current_quantity - 1)
+            # Check if the user already has the same product with the same color in the cart
+            cart_item = CartItemTelegram.objects.filter(
+                profile=profile,
+                product=product,
+                color=color
+            ).first()
 
-                product_details = generate_product_details(product, new_quantity, current_color)
-                markup = generate_markup(product, new_quantity, len(images) > 1)
-                bot.edit_message_caption(
-                    caption=product_details,
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    reply_markup=markup
+            if cart_item:
+                # If the item exists, update the quantity
+                cart_item.quantity = quantity
+                cart_item.save()
+                bot.answer_callback_query(call.id, "Cart item updated.")
+            else:
+                # If the item doesn't exist, create a new cart item
+                CartItemTelegram.objects.create(
+                    profile=profile,
+                    product=product,
+                    quantity=quantity,
+                    color=color
                 )
+                bot.answer_callback_query(call.id, "Product added to cart.")
+
+            # Regenerate the product details to reflect the updated cart
+            new_product_details = generate_product_details(product, quantity, color, profile)
+
+            # Update the message caption to display updated product details with cart
+            markup = generate_markup(product, quantity, len(product.images.all()) > 1, current_color=color)
+            bot.edit_message_caption(
+                caption=new_product_details,
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                reply_markup=markup
+            )
 
         bot.infinity_polling()
 

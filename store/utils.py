@@ -9,12 +9,11 @@ class CartForAuthenticatedUser:
         if product_id and action:
             self.add_or_delete(product_id, action)
 
-
     # Метод для вывода даннных корзины
     def get_cart_info(self):
         customer, created = Customer.objects.get_or_create(user=self.user)  # Создаём либо получаем покупателя
         order, created = Order.objects.get_or_create(customer=customer)  # Создаём либо получаем заказ
-        order_products = order.orderproduct_set.all()  #  Получаем заказаные продукты заказа
+        order_products = order.orderproduct_set.all()  # Получаем заказаные продукты заказа
 
         cart_total_quantity = order.get_cart_total_quantity
         cart_total_price = order.get_cart_total_price
@@ -54,7 +53,6 @@ class CartForAuthenticatedUser:
         order.save()
 
 
-
 def get_cart_data(request):
     cart = CartForAuthenticatedUser(request)
     cart_info = cart.get_cart_info()
@@ -65,6 +63,3 @@ def get_cart_data(request):
         'order': cart_info['order'],
         'products': cart_info['products']
     }
-
-
-

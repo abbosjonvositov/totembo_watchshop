@@ -323,3 +323,14 @@ class GalleryTelegram(models.Model):
     class Meta:
         verbose_name = 'Картинка телеграм'
         verbose_name_plural = 'Картинки телеграм'
+
+
+class CartItemTelegram(models.Model):
+    profile = models.ForeignKey(ProfileTelegram, on_delete=models.CASCADE, related_name='cart_items')
+    product = models.ForeignKey(ProductTelegram, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    color = models.CharField(max_length=50, blank=True, null=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'{self.product.title} - {self.quantity}x'
