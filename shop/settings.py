@@ -149,4 +149,4 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'muhammadievaleksandr29@gmail.com'
 EMAIL_HOST_PASSWORD = 'nnuabqlbfhxqtcgx'  # Пароль приложения
 
-TOKEN = '6581717055:AAFQDRXnEXkjm5410SCnIJwDz3DamubmRVc'
+TOKEN = ''
